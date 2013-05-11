@@ -236,6 +236,15 @@ public:
     CGAL::output_to_medit(os,*this,rebind,show_patches);
   }
 
+  /// Outputs the mesh to vtk (paraview)
+  void output_to_vtk(std::ofstream& os,
+                       bool rebind = true,
+                       bool show_patches = false) const
+  {
+    // Call global function
+    CGAL::output_to_vtk(os,*this,rebind,show_patches);
+  }
+
   //-------------------------------------------------------
   // Undocumented features
   //-------------------------------------------------------

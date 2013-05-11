@@ -864,6 +864,164 @@ output_to_medit(std::ostream& os,
 
 } // end output_to_medit(...)
 
+
+template <class C3T3, bool rebind, bool no_patch>
+void
+output_to_vtk(std::ostream& os,
+                const C3T3& c3t3)
+{
+#ifdef CGAL_MESH_3_IO_VERBOSE
+  std::cerr << "Output to vtk:\n";
+#endif
+  
+  typedef Medit_pmap_generator<C3T3,rebind,no_patch> Generator;
+  typedef typename Generator::Cell_pmap Cell_pmap;
+  typedef typename Generator::Facet_pmap Facet_pmap;
+  typedef typename Generator::Facet_pmap_twice Facet_pmap_twice;
+  typedef typename Generator::Vertex_pmap Vertex_pmap;
+  
+  Cell_pmap cell_pmap(c3t3);
+  Facet_pmap facet_pmap(c3t3,cell_pmap);
+  Facet_pmap_twice facet_pmap_twice(c3t3,cell_pmap);
+  Vertex_pmap vertex_pmap(c3t3,cell_pmap,facet_pmap);
+  
+  output_to_vtk(os,
+                  c3t3,
+                  vertex_pmap,
+                  facet_pmap,
+                  cell_pmap,
+                  facet_pmap_twice,
+                  Generator().print_twice());
+  
+#ifdef CGAL_MESH_3_IO_VERBOSE
+  std::cerr << "done.\n";
+#endif
+}
+
+
+  
+template <class C3T3,
+          class Vertex_index_property_map,
+          class Facet_index_property_map,
+          class Facet_index_property_map_twice,
+          class Cell_index_property_map>
+void
+output_to_vtk(std::ostream& os,
+                const C3T3& c3t3,
+                const Vertex_index_property_map& vertex_pmap,
+                const Facet_index_property_map& facet_pmap,
+                const Cell_index_property_map& cell_pmap,
+                const Facet_index_property_map_twice& facet_twice_pmap = Facet_index_property_map_twice(),
+                const bool print_each_facet_twice = false)
+{
+  typedef typename C3T3::Triangulation Tr;
+  typedef typename C3T3::Facets_in_complex_iterator Facet_iterator;
+  typedef typename C3T3::Cells_in_complex_iterator Cell_iterator;
+
+  typedef typename Tr::Finite_vertices_iterator Finite_vertices_iterator;
+  typedef typename Tr::Vertex_handle Vertex_handle;
+  typedef typename Tr::Point Point_3;
+
+  const Tr& tr = c3t3.triangulation();
+
+  //-------------------------------------------------------
+  // File output
+  //-------------------------------------------------------
+
+  //-------------------------------------------------------
+  // Header
+  //-------------------------------------------------------
+  os << std::setprecision(20);
+
+  os << "MeshVersionFormatted 1" << std::endl
+     << "Dimension 3" << std::endl;
+
+
+  //-------------------------------------------------------
+  // Vertices
+  //-------------------------------------------------------
+  os << "Vertices" << std::endl
+     << tr.number_of_vertices() << std::endl;
+
+  std::map<Vertex_handle, int> V;
+  int inum = 1;
+  for( Finite_vertices_iterator vit = tr.finite_vertices_begin();
+       vit != tr.finite_vertices_end();
+       ++vit)
+  {
+    V[vit] = inum++;
+    Point_3 p = vit->point();
+    os << CGAL::to_double(p.x()) << " "
+       << CGAL::to_double(p.y()) << " "
+       << CGAL::to_double(p.z()) << " "
+       << get(vertex_pmap, vit)
+       << std::endl;
+  }
+
+  //-------------------------------------------------------
+  // Facets
+  //-------------------------------------------------------
+  typename C3T3::size_type number_of_triangles = c3t3.number_of_facets_in_complex();
+  
+  if ( print_each_facet_twice )
+    number_of_triangles += number_of_triangles;
+  
+  os << "Triangles" << std::endl
+     << number_of_triangles << std::endl;
+
+  for( Facet_iterator fit = c3t3.facets_in_complex_begin();
+       fit != c3t3.facets_in_complex_end();
+       ++fit)
+  {
+    for (int i=0; i<4; i++)
+    {
+      if (i != fit->second)
+      {
+        const Vertex_handle& vh = (*fit).first->vertex(i);
+        os << V[vh] << " ";
+      }
+    }
+    os << get(facet_pmap, *fit) << std::endl;
+    
+    // Print triangle again if needed
+    if ( print_each_facet_twice )
+    {
+      for (int i=0; i<4; i++)
+      {
+        if (i != fit->second)
+        {
+          const Vertex_handle& vh = (*fit).first->vertex(i);
+          os << V[vh] << " ";
+        }
+      }
+      os << get(facet_twice_pmap, *fit) << std::endl;
+    }
+  }
+
+  //-------------------------------------------------------
+  // Tetrahedra
+  //-------------------------------------------------------
+  os << "Tetrahedra" << std::endl
+     << c3t3.number_of_cells_in_complex() << std::endl;
+
+  for( Cell_iterator cit = c3t3.cells_in_complex_begin() ;
+       cit != c3t3.cells_in_complex_end() ;
+       ++cit )
+  {
+    for (int i=0; i<4; i++)
+      os << V[cit->vertex(i)] << " ";
+
+    os << get(cell_pmap, cit) << std::endl;
+  }
+
+  //-------------------------------------------------------
+  // End
+  //-------------------------------------------------------
+  os << "End" << std::endl;
+
+} // end output_to_vtk(...)
+
+
 } // end namespace Mesh_3
 
   
@@ -898,6 +1056,29 @@ output_to_medit(std::ostream& os,
       Mesh_3::output_to_medit<C3T3,false,false>(os,c3t3);
     else
       Mesh_3::output_to_medit<C3T3,false,true>(os,c3t3);
+  }
+}
+
+template <class C3T3>
+void
+output_to_vtk(std::ostream& os,
+                const C3T3& c3t3,
+                bool rebind = false,
+                bool show_patches = false) 
+{
+  if ( rebind )
+  {
+    if ( show_patches )
+      Mesh_3::output_to_vtk<C3T3,true,false>(os,c3t3);
+    else
+      Mesh_3::output_to_vtk<C3T3,true,true>(os,c3t3);
+  }
+  else
+  {
+    if ( show_patches )
+      Mesh_3::output_to_vtk<C3T3,false,false>(os,c3t3);
+    else
+      Mesh_3::output_to_vtk<C3T3,false,true>(os,c3t3);
   }
 }
 
